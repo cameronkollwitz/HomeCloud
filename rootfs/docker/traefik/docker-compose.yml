@@ -1,0 +1,27 @@
+# Traefik_Public Network Service Stack
+
+# What is this?
+#
+# This stack exists solely to deploy the `traefik_public` overlay network, so that
+# other stacks can attach to it and become internet-facing!
+
+version: "3.4"
+
+networks:
+  # Public (External) Network
+  # All internet-facing services attach to this network!
+  public:
+    attachable: true
+    driver: overlay
+    ipam:
+      config:
+        - subnet: XXX.XXX.XXX.0/24 # Define the subnet of the service stack!
+
+services:
+  # This service does NOTHING! It is only here to launch the stack!
+  scratch:
+    image: scratch
+    deploy:
+      replicas: 0
+    networks:
+      public:
