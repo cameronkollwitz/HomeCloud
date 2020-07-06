@@ -1,0 +1,768 @@
+# Media Automation Service Stack
+# Includes: Bazarr, Calibre, Calibre-Web, LazyLibrarian, NzbHydra2, NzbGet, Sonarr, Radarr, Lidarr, Tdarr, and Ombi Services
+# 
+# Additionally, there are labels in this stack for Traefik 2.2 configuration as well as Authelia Middleware
+# These labels will need to be removed or adjusted as needed!
+
+version: "3.7"
+
+########################### NETWORKS
+networks:
+  # Stack-Only Networking
+  internal:
+    attachable: true
+    driver: overlay
+    ipam:
+      config:
+        - subnet: XXX.XXX.XXX.0/24 # Define the subnet for this stack!
+  # External (Public) Network
+  # All front-facing external services attach to this network!
+  traefik_public:
+    external: true
+
+########################### SECRETS
+#secrets:
+#  secret_name_here:
+#    external: true
+
+########################### VOLUMES
+volumes:
+  cache:
+    external: true
+
+########################### SERVICES
+services:
+# All services / apps go below this line!
+
+  # Bazarr -- Subtitle Management
+  bazarr:
+    image: linuxserver/bazarr:latest # Use the ':development' tag for the latest release
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.bazarr.loadbalancer.server.port: "6767"
+        traefik.http.routers.bazarr-rtr.rule: "Host(`bazarr.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.bazarr-rtr.entrypoints: "https"
+        traefik.http.routers.bazarr-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.bazarr-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.bazarr-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.bazarr-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.bazarr-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.bazarr.headers.SSLRedirect: "true"
+        traefik.http.middlewares.bazarr.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.bazarr.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.bazarr.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.bazarr.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.bazarr.headers.SSLHost: ""
+        traefik.http.middlewares.bazarr.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.bazarr.headers.STSPreload: "true"
+        traefik.http.middlewares.bazarr.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.bazarr-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.bazarr-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.bazarr-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.bazarr-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+      UMASK_SET: 022 # Optional
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 6767
+        published: 36767
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/bazarr/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/movies
+        target: /movies
+      - type: bind
+        source: /rootfs/media/series
+        target: /tv
+
+  calibre:
+    # Default admin login (Change after first run!):
+    # Username: admin
+    # Password: admin123
+    image: linuxserver/calibre:latest
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.calibre.loadbalancer.server.port: "8080"
+        traefik.http.routers.calibre-rtr.rule: "Host(`calibre.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.calibre-rtr.entrypoints: "https"
+        traefik.http.routers.calibre-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.calibre-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.calibre-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.calibre-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.calibre-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.calibre.headers.SSLRedirect: "true"
+        traefik.http.middlewares.calibre.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.calibre.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.calibre.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.calibre.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.calibre.headers.SSLHost: ""
+        traefik.http.middlewares.calibre.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.calibre.headers.STSPreload: "true"
+        traefik.http.middlewares.calibre.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.calibre-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.calibre-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.calibre-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.calibre-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      GUAC_USER: "root" # OPTIONAL
+      GUAC_PASS: "baf0de01bcc9fb7274d970d89109cc93" # MD5 Hash (OPTIONAL)
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      # Desktop UI (Apache-Guac)
+      - target: 8080
+        #published: 8080
+        protocol: tcp
+      # Webserver UI
+      #- target: 8081
+      #  published: 8081
+      #  protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/calibre/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/books
+        target: /books
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  calibre-web:
+    image: technosoft2000/calibre-web:latest
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.calibre-web.loadbalancer.server.port: "8083"
+        traefik.http.routers.calibre-web-rtr.rule: "Host(`calibre-web.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.calibre-web-rtr.entrypoints: "https"
+        traefik.http.routers.calibre-web-rtr.tls.certresolver: "dns-cloudflare"
+        ## SSL Certificates
+        traefik.http.routers.calibre-web-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.calibre-web-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.calibre-web-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.calibre-web-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.calibre-web.headers.SSLRedirect: "true"
+        traefik.http.middlewares.calibre-web.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.calibre-web.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.calibre-web.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.calibre-web.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.calibre-web.headers.SSLHost: ""
+        traefik.http.middlewares.calibre-web.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.calibre-web.headers.STSPreload: "true"
+        traefik.http.middlewares.calibre-web.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.calibre-web-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.calibre-web-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.calibre-web-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.calibre-web-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      APP_REPO: "https://github.com/janeczku/calibre-web.git"
+      APP_BRANCH: "master"
+      CONTAINER_TIMEZONE: "America/Los_Angeles"
+      SET_CONTAINER_TIMEZONE: "true"
+      USE_CONFIG_DIR: "true" # activate the usage of a dedicated configuration directory, otherwise the books directory will be used (default) (OPTIONAL)
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 8083
+        published: 8083
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/calibre-web/_data/app
+        target: /calibre-web/app
+      - type: bind
+        source: /rootfs/docker/media/calibre-web/_data/config
+        target: /calibre-web/config
+      - type: bind
+        source: /rootfs/docker/media/calibre-web/_data/kindlegen
+        target: /calibre-web/kindlegen
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/books
+        target: /books
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  hydra2:
+    image: linuxserver/hydra2:latest
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.hydra2.loadbalancer.server.port: "5076"
+        traefik.http.routers.hydra2-rtr.rule: "Host(`hydra2.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.hydra2-rtr.entrypoints: "https"
+        traefik.http.routers.hydra2-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.hydra2-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.hydra2-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.hydra2-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.hydra2-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.hydra2.headers.SSLRedirect: "true"
+        traefik.http.middlewares.hydra2.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.hydra2.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.hydra2.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.hydra2.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.hydra2.headers.SSLHost: ""
+        traefik.http.middlewares.hydra2.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.hydra2.headers.STSPreload: "true"
+        traefik.http.middlewares.hydra2.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.hydra2-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.hydra2-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.hydra2-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.hydra2-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 5076
+        published: 5076
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/hydra2/_data/config
+        target: /config
+
+  lazylibrarian:
+    image: linuxserver/lazylibrarian:latest
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.lazylibrarian.loadbalancer.server.port: "5299"
+        traefik.http.routers.lazylibrarian-rtr.rule: "Host(`lazylibrarian.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.lazylibrarian-rtr.entrypoints: "https"
+        traefik.http.routers.lazylibrarian-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.lazylibrarian-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.lazylibrarian-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.lazylibrarian-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.lazylibrarian-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.lazylibrarian.headers.SSLRedirect: "true"
+        traefik.http.middlewares.lazylibrarian.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.lazylibrarian.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.lazylibrarian.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.lazylibrarian.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.lazylibrarian.headers.SSLHost: ""
+        traefik.http.middlewares.lazylibrarian.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.lazylibrarian.headers.STSPreload: "true"
+        traefik.http.middlewares.lazylibrarian.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.lazylibrarian-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.lazylibrarian-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.lazylibrarian-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.lazylibrarian-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+      DOCKER_MODS: "linuxserver/calibre-web:calibre" # x86-64 only! Adds the ability to enable the Calibredb import program (Optional)
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 5299
+        published: 5299
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/lazylibrarian/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/books
+        target: /books
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  lidarr:
+    image: linuxserver/lidarr:preview
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.routers.lidarr-rtr.entrypoints: "https"
+        traefik.http.routers.lidarr-rtr.rule: "Host(`lidarr.DOMAINNAME.TLD`)"
+        traefik.http.services.lidarr.loadbalancer.server.port: "8686"
+        ## HTTPS Services
+        traefik.http.routers.lidarr-rtr.tls: "true"
+        traefik.http.routers.lidarr-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.lidarr-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.lidarr-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.lidarr-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.lidarr-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.lidarr.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.lidarr.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.lidarr.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.lidarr.headers.frameDeny: "true"
+        traefik.http.middlewares.lidarr.headers.SSLHost: ""
+        traefik.http.middlewares.lidarr.headers.SSLRedirect: "true"
+        traefik.http.middlewares.lidarr.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.lidarr.headers.STSPreload: "true"
+        traefik.http.middlewares.lidarr.headers.STSSeconds: "315360000"
+        ## Middleware Chains
+        #traefik.http.routers.lidarr-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.lidarr-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.lidarr-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.lidarr-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 8686
+        published: 8686
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/lidarr/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/music
+        target: /music
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  nzbget:
+    # NOTE: Make sure that once this service is launched that `DirectWrite` and accomidating features are ENABLED for best performance!
+    image: linuxserver/nzbget:latest
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.nzbget.loadbalancer.server.port: "6789"
+        traefik.http.routers.nzbget-rtr.rule: "Host(`nzbget.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.nzbget-rtr.entrypoints: "https"
+        traefik.http.routers.nzbget-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.nzbget-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.nzbget-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.nzbget-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.nzbget-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.nzbget.headers.SSLRedirect: "true"
+        traefik.http.middlewares.nzbget.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.nzbget.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.nzbget.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.nzbget.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.nzbget.headers.SSLHost: ""
+        traefik.http.middlewares.nzbget.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.nzbget.headers.STSPreload: "true"
+        traefik.http.middlewares.nzbget.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.nzbget-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.nzbget-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.nzbget-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.nzbget-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      # Ensure that if you use CephFS to NOT use port 6789 for the exposed-side of the container!
+      - target: 6789
+        published: 6789
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/nzbget/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  # Ombi Request System
+  ombi:
+    image: linuxserver/ombi:latest
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.ombi.loadbalancer.server.port: "3579"
+        traefik.http.routers.ombi-rtr.rule: "Host(`ombi.DOMAINNAME.TLD`, `requests.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.ombi-rtr.entrypoints: "https"
+        traefik.http.routers.ombi-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.ombi-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.ombi-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        traefik.http.routers.ombi-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.ombi-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.ombi.headers.SSLRedirect: "true"
+        traefik.http.middlewares.ombi.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.ombi.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.ombi.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.ombi.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.ombi.headers.SSLHost: ""
+        traefik.http.middlewares.ombi.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.ombi.headers.STSPreload: "true"
+        traefik.http.middlewares.ombi.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.ombi-rtr.middlewares: "chain-authelia@file" # Authelia
+        #traefik.http.routers.ombi-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        traefik.http.routers.ombi-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.ombi-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 3579
+        published: 3579
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/ombi/_data/config
+        target: /config
+
+  radarr:
+    image: linuxserver/radarr:preview
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.radarr.loadbalancer.server.port: "7878"
+        traefik.http.routers.radarr-rtr.rule: "Host(`radarr.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.radarr-rtr.entrypoints: "https"
+        traefik.http.routers.radarr-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.radarr-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.radarr-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.radarr-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.radarr-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.radarr.headers.SSLRedirect: "true"
+        traefik.http.middlewares.radarr.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.radarr.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.radarr.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.radarr.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.radarr.headers.SSLHost: ""
+        traefik.http.middlewares.radarr.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.radarr.headers.STSPreload: "true"
+        traefik.http.middlewares.radarr.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.radarr-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.radarr-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.radarr-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.radarr-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 7878
+        published: 7878
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/radarr/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/movies
+        target: /movies
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  sonarr:
+    image: linuxserver/sonarr:preview
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.sonarr.loadbalancer.server.port: "8989"
+        traefik.http.routers.sonarr-rtr.rule: "Host(`sonarr.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.sonarr-rtr.entrypoints: "https"
+        traefik.http.routers.sonarr-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.sonarr-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.sonarr-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.sonarr-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.sonarr-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.sonarr.headers.SSLRedirect: "true"
+        traefik.http.middlewares.sonarr.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.sonarr.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.sonarr.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.sonarr.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.sonarr.headers.SSLHost: ""
+        traefik.http.middlewares.sonarr.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.sonarr.headers.STSPreload: "true"
+        traefik.http.middlewares.sonarr.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.sonarr-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.sonarr-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.sonarr-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.sonarr-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      # You can set any environment variable from a file by using a special prepend: FILE__
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+      UMASK_SET: "022"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 8989
+        published: 8989
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind
+        source: /rootfs/docker/media/sonarr/_data/config
+        target: /config
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/series
+        target: /tv
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
+
+  # Tdarr -- Video Transcoding
+  tdarr:
+    image: haveagitgat/tdarr:latest
+    command: --runtime=nvidia # Enables NVIDIA Capabilities
+    deploy:
+      labels:
+        traefik.enable: "true"
+        traefik.docker.TLD: "traefik_public"
+        ## HTTP Routers
+        traefik.http.services.tdarr.loadbalancer.server.port: "8265"
+        traefik.http.routers.tdarr-rtr.rule: "Host(`tdarr.DOMAINNAME.TLD`)"
+        ## HTTPS Services
+        traefik.http.routers.tdarr-rtr.entrypoints: "https"
+        traefik.http.routers.tdarr-rtr.tls.certresolver: "dns-cloudflare"
+        # SSL Certificates
+        traefik.http.routers.tdarr-rtr.tls.domains[0].main: "*.DOMAINNAME.TLD"
+        traefik.http.routers.tdarr-rtr.tls.domains[0].sans: "DOMAINNAME.TLD"
+        #traefik.http.routers.tdarr-rtr.tls.domains[1].main: "*.DOMAINNAME.TLD"
+        #traefik.http.routers.tdarr-rtr.tls.domains[1].sans: "DOMAINNAME.TLD"
+        ## HSTS Header Middleware
+        traefik.http.middlewares.tdarr.headers.SSLRedirect: "true"
+        traefik.http.middlewares.tdarr.headers.STSSeconds: "315360000"
+        traefik.http.middlewares.tdarr.headers.browserXSSFilter: "true"
+        traefik.http.middlewares.tdarr.headers.contentTypeNosniff: "true"
+        traefik.http.middlewares.tdarr.headers.forceSTSHeader: "true"
+        traefik.http.middlewares.tdarr.headers.SSLHost: ""
+        traefik.http.middlewares.tdarr.headers.STSIncludeSubdomains: "true"
+        traefik.http.middlewares.tdarr.headers.STSPreload: "true"
+        traefik.http.middlewares.tdarr.headers.frameDeny: "true"
+        ## Middleware Chains
+        #traefik.http.routers.tdarr-rtr.middlewares: "chain-authelia@file" # Authelia
+        traefik.http.routers.tdarr-rtr.middlewares: "chain-basic-auth@file" # .htpasswd Authentication
+        #traefik.http.routers.tdarr-rtr.middlewares: "chain-no-auth@file" # No Authentication
+        #traefik.http.routers.tdarr-rtr.middlewares: "chain-oauth@file" # Traefik-Forward-Auth
+      restart_policy:
+        condition: any
+    environment:
+      # Requires <https://github.com/NVIDIA/nvidia-container-runtime>
+      NVIDIA_DRIVER_CAPABILITIES: "all"
+      NVIDIA_VISIBLE_DEVICES: "/dev/null/device/here/null/null/null"
+      PGID: "1000"
+      PUID: "1000"
+      TZ: "America/Los_Angeles"
+    networks:
+      internal:
+      traefik_public:
+    ports:
+      - target: 8265
+        published: 8265
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
+      - type: bind # Tdarr Documents
+        source: /rootfs/docker/media/tdarr/_data/data
+        target: /home/Tdarr/Documents/Tdarr
+      - type: bind # MongoDB Database
+        source: /rootfs/docker/media/tdarr/_data/mongodb
+        target: /var/lib/mongodb
+      - type: volume # Transcode Cache
+        source: cache
+        target: /home/Tdarr/cache
+      # Media Pool
+      - type: bind
+        source: /rootfs/media
+        target: /rootfs/media
+      - type: bind
+        source: /rootfs/media/series
+        target: /home/Tdarr/Media/Series
+      - type: bind
+        source: /rootfs/media/movies
+        target: /home/Tdarr/Media/Movies
+      - type: bind
+        source: /rootfs/media/music
+        target: /home/Tdarr/Media/Music
+      # Download Volume
+      - type: bind
+        source: /rootfs/downloads
+        target: /downloads
